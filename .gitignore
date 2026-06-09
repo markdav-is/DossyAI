@@ -24,9 +24,6 @@ logs/
 .env.local
 appsettings.Local.json
 
-## Docker
-docker/data/
-
 ## OS
 .DS_Store
 Thumbs.db

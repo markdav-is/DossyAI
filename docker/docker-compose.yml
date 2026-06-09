@@ -1,0 +1,33 @@
+version: '3.9'
+
+services:
+  dossyai:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - DossyAi__Database__ConnectionString=Server=sqlserver,1433;Database=DossyAiDb;User Id=sa;Password=DossyAI_Str0ng!;TrustServerCertificate=true;
+      - DossyAi__Database__AutoMigrate=true
+      - DossyAi__Mcp__ApiKey=dossyai-key-dev
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: unless-stopped
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    ports:
+      - "1433:1433"
+    environment:
+      - SA_PASSWORD=DossyAI_Str0ng!
+      - ACCEPT_EULA=Y
+      - MSSQL_PID=Developer
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P 'DossyAI_Str0ng!' -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped

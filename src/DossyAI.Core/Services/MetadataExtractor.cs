@@ -80,13 +80,13 @@ public class MetadataExtractor
     }
 
     private static string BuildPrompt(string content, string category) =>
-        $"""
+        $$"""
         Extract metadata from the following content. Return only valid JSON with this exact schema:
-        {{"type": "string", "domain": ["string"], "stakeholders": ["string"], "action_items": ["string"], "status": "string"}}
-        
-        Category hint: {category}
-        Content: {content}
-        
+        {"type": "string", "domain": ["string"], "stakeholders": ["string"], "action_items": ["string"], "status": "string"}
+
+        Category hint: {{category}}
+        Content: {{content}}
+
         JSON:
         """;
 
