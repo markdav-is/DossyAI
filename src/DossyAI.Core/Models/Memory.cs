@@ -4,7 +4,7 @@ public class Memory
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Content { get; set; } = string.Empty;
-    public float[] Embedding { get; set; } = Array.Empty<float>();
+    public float[] Embedding { get; set; } = [];
     public string Category { get; set; } = string.Empty;
     public string JsonMetadata { get; set; } = "{}";
     public string CreatedBy { get; set; } = "agent";

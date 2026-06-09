@@ -8,29 +8,16 @@ using Microsoft.Extensions.Logging;
 
 namespace DossyAI.Core.Services;
 
-public class MemoryService : IMemoryService
+public class MemoryService(
+    DossyAiDbContext db,
+    IEmbeddingService embeddingService,
+    MetadataExtractor metadataExtractor,
+    ILogger<MemoryService> logger) : IMemoryService
 {
-    private readonly DossyAiDbContext _db;
-    private readonly IEmbeddingService _embeddingService;
-    private readonly MetadataExtractor _metadataExtractor;
-    private readonly ILogger<MemoryService> _logger;
-
-    public MemoryService(
-        DossyAiDbContext db,
-        IEmbeddingService embeddingService,
-        MetadataExtractor metadataExtractor,
-        ILogger<MemoryService> logger)
-    {
-        _db = db;
-        _embeddingService = embeddingService;
-        _metadataExtractor = metadataExtractor;
-        _logger = logger;
-    }
-
     public async Task<Memory> StoreContextAsync(string content, string category, Dictionary<string, object>? metadata, CancellationToken ct = default)
     {
-        var embedding = await _embeddingService.GetEmbeddingAsync(content, ct);
-        var extracted = await _metadataExtractor.ExtractAsync(content, category, ct);
+        var embedding = await embeddingService.GetEmbeddingAsync(content, ct);
+        var extracted = await metadataExtractor.ExtractAsync(content, category, ct);
 
         var mergedMetadata = new Dictionary<string, object>
         {
@@ -57,16 +44,20 @@ public class MemoryService : IMemoryService
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        _db.Memories.Add(memory);
-        await _db.SaveChangesAsync(ct);
-        _logger.LogInformation("Stored memory {Id} in category {Category}", memory.Id, category);
+        db.Memories.Add(memory);
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Stored memory {Id} in category {Category}", memory.Id, category);
         return memory;
     }
 
     public async Task<List<MemorySearchResult>> FindRelatedAsync(string query, int limit = 10, float minSimilarity = 0.7f, CancellationToken ct = default)
     {
-        var queryEmbedding = await _embeddingService.GetEmbeddingAsync(query, ct);
-        var memories = await _db.Memories
+        var queryEmbedding = await embeddingService.GetEmbeddingAsync(query, ct);
+        // Note: cosine similarity scoring is done in-memory since EF Core does not support
+        // vector similarity functions for the nvarchar(max) JSON-encoded embedding column.
+        // This loads all active memories into memory for scoring — acceptable for moderate
+        // dataset sizes but would need a dedicated vector store for large-scale deployments.
+        var memories = await db.Memories
             .Where(m => m.Status != "archived")
             .ToListAsync(ct);
 
@@ -86,7 +77,7 @@ public class MemoryService : IMemoryService
 
     public async Task<List<Memory>> RetrieveByCategoryAsync(string category, string? domainFilter = null, int skip = 0, int take = 20, CancellationToken ct = default)
     {
-        var query = _db.Memories.Where(m => m.Category == category && m.Status == "active");
+        var query = db.Memories.Where(m => m.Category == category && m.Status == "active");
 
         if (!string.IsNullOrEmpty(domainFilter))
             query = query.Where(m => m.JsonMetadata.Contains(domainFilter));
@@ -96,7 +87,7 @@ public class MemoryService : IMemoryService
 
     public async Task<(int Total, List<Memory> Items)> ListMemoryAsync(string? category = null, string? createdBy = null, int skip = 0, int take = 20, CancellationToken ct = default)
     {
-        var query = _db.Memories.AsQueryable();
+        var query = db.Memories.AsQueryable();
 
         if (!string.IsNullOrEmpty(category))
             query = query.Where(m => m.Category == category);
@@ -110,13 +101,13 @@ public class MemoryService : IMemoryService
 
     public async Task<Memory> UpdateMemoryAsync(Guid id, string? newContent = null, Dictionary<string, object>? newMetadata = null, string? status = null, CancellationToken ct = default)
     {
-        var memory = await _db.Memories.FindAsync(new object[] { id }, ct)
+        var memory = await db.Memories.FindAsync(new object[] { id }, ct)
             ?? throw new KeyNotFoundException($"Memory {id} not found");
 
         if (!string.IsNullOrEmpty(newContent))
         {
             memory.Content = newContent;
-            memory.Embedding = await _embeddingService.GetEmbeddingAsync(newContent, ct);
+            memory.Embedding = await embeddingService.GetEmbeddingAsync(newContent, ct);
             memory.ContentHash = ComputeHash(newContent);
         }
 
@@ -132,40 +123,44 @@ public class MemoryService : IMemoryService
             memory.Status = status;
 
         memory.UpdatedAt = DateTimeOffset.UtcNow;
-        await _db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(ct);
         return memory;
     }
 
     public async Task DeleteMemoryAsync(Guid id, string? reason = null, CancellationToken ct = default)
     {
-        var memory = await _db.Memories.FindAsync(new object[] { id }, ct)
-            ?? throw new KeyNotFoundException($"Memory {id} not found");
+        var affected = await db.Memories
+            .Where(m => m.Id == id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(m => m.Status, "archived")
+                .SetProperty(m => m.UpdatedAt, DateTimeOffset.UtcNow), ct);
 
-        memory.Status = "archived";
-        memory.UpdatedAt = DateTimeOffset.UtcNow;
-
-        if (!string.IsNullOrEmpty(reason))
-        {
-            var meta = JsonSerializer.Deserialize<Dictionary<string, object>>(memory.JsonMetadata) ?? new();
-            meta["archive_reason"] = reason;
-            memory.JsonMetadata = JsonSerializer.Serialize(meta);
-        }
-
-        await _db.SaveChangesAsync(ct);
+        if (affected == 0)
+            throw new KeyNotFoundException($"Memory {id} not found");
     }
 
     public async Task<MemoryStats> GetStatsAsync(CancellationToken ct = default)
     {
-        var all = await _db.Memories.ToListAsync(ct);
+        var total = await db.Memories.CountAsync(ct);
+        var byCategory = await db.Memories
+            .GroupBy(m => m.Category)
+            .Select(g => new { Category = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Category, g => g.Count, ct);
+        var activeCount = await db.Memories.CountAsync(m => m.Status == "active", ct);
+        var archivedCount = await db.Memories.CountAsync(m => m.Status == "archived", ct);
+        var oldest = await db.Memories.OrderBy(m => m.CreatedAt).Select(m => (DateTimeOffset?)m.CreatedAt).FirstOrDefaultAsync(ct);
+        var newest = await db.Memories.OrderByDescending(m => m.CreatedAt).Select(m => (DateTimeOffset?)m.CreatedAt).FirstOrDefaultAsync(ct);
+
         return new MemoryStats
         {
-            TotalMemories = all.Count,
-            ActiveMemories = all.Count(m => m.Status == "active"),
-            ArchivedMemories = all.Count(m => m.Status == "archived"),
-            ByCategory = all.GroupBy(m => m.Category).ToDictionary(g => g.Key, g => g.Count()),
-            ByCreatedBy = all.GroupBy(m => m.CreatedBy).ToDictionary(g => g.Key, g => g.Count()),
-            OldestMemory = all.Any() ? all.Min(m => m.CreatedAt) : null,
-            NewestMemory = all.Any() ? all.Max(m => m.CreatedAt) : null
+            TotalMemories = total,
+            ActiveMemories = activeCount,
+            ArchivedMemories = archivedCount,
+            ByCategory = byCategory,
+            OldestMemory = oldest,
+            NewestMemory = newest,
+            TotalEmbeddingsStored = total,
+            EmbeddingDimensions = embeddingService.Dimensions
         };
     }
 

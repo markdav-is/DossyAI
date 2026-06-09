@@ -5,31 +5,21 @@ using Microsoft.Extensions.Logging;
 
 namespace DossyAI.Core.Services;
 
-public class OpenRouterEmbeddingService : IEmbeddingService
+public class OpenRouterEmbeddingService(HttpClient http, IConfiguration config, ILogger<OpenRouterEmbeddingService> logger) : IEmbeddingService
 {
-    private readonly HttpClient _http;
-    private readonly string _model;
-    private readonly ILogger<OpenRouterEmbeddingService> _logger;
+    private readonly string _model = config["DossyAi:Embedding:Model"] ?? "openai/text-embedding-3-small";
 
-    public int Dimensions { get; }
-
-    public OpenRouterEmbeddingService(HttpClient http, IConfiguration config, ILogger<OpenRouterEmbeddingService> logger)
-    {
-        _http = http;
-        var apiKey = config["DossyAi:Embedding:OpenRouterApiKey"] ?? string.Empty;
-        _model = config["DossyAi:Embedding:Model"] ?? "openai/text-embedding-3-small";
-        Dimensions = int.TryParse(config["DossyAi:Embedding:Dimensions"], out var d) ? d : 1536;
-        _logger = logger;
-        _http.BaseAddress = new Uri("https://openrouter.ai");
-        if (!string.IsNullOrEmpty(apiKey))
-            _http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-    }
+    public int Dimensions { get; } = int.TryParse(config["DossyAi:Embedding:Dimensions"], out var d) ? d : 1536;
 
     public async Task<float[]> GetEmbeddingAsync(string text, CancellationToken ct = default)
     {
+        var apiKey = config["DossyAi:Embedding:OpenRouterApiKey"] ?? string.Empty;
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://openrouter.ai/api/v1/embeddings");
+        if (!string.IsNullOrEmpty(apiKey))
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
         var payload = JsonSerializer.Serialize(new { model = _model, input = text });
-        var response = await _http.PostAsync("/api/v1/embeddings",
-            new StringContent(payload, Encoding.UTF8, "application/json"), ct);
+        request.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
         var json = await response.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
