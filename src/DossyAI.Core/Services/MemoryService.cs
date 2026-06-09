@@ -129,14 +129,11 @@ public class MemoryService(
 
     public async Task DeleteMemoryAsync(Guid id, string? reason = null, CancellationToken ct = default)
     {
-        var affected = await db.Memories
-            .Where(m => m.Id == id)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(m => m.Status, "archived")
-                .SetProperty(m => m.UpdatedAt, DateTimeOffset.UtcNow), ct);
-
-        if (affected == 0)
-            throw new KeyNotFoundException($"Memory {id} not found");
+        var memory = await db.Memories.FindAsync(new object[] { id }, ct)
+            ?? throw new KeyNotFoundException($"Memory {id} not found");
+        memory.Status = "archived";
+        memory.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
     public async Task<MemoryStats> GetStatsAsync(CancellationToken ct = default)

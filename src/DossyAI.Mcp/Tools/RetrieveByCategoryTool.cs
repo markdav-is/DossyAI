@@ -4,15 +4,8 @@ using ModelContextProtocol.Server;
 namespace DossyAI.Mcp.Tools;
 
 [McpServerToolType]
-public class RetrieveByCategoryTool
+public class RetrieveByCategoryTool(IMemoryService memoryService)
 {
-    private readonly IMemoryService _memoryService;
-
-    public RetrieveByCategoryTool(IMemoryService memoryService)
-    {
-        _memoryService = memoryService;
-    }
-
     /// <summary>Retrieve memories filtered by category with optional domain filter</summary>
     [McpServerTool(Name = "retrieve_by_category")]
     public async Task<object> RetrieveByCategoryAsync(
@@ -22,7 +15,7 @@ public class RetrieveByCategoryTool
         int take = 20,
         CancellationToken cancellationToken = default)
     {
-        var memories = await _memoryService.RetrieveByCategoryAsync(category, domainFilter, skip, take, cancellationToken);
+        var memories = await memoryService.RetrieveByCategoryAsync(category, domainFilter, skip, take, cancellationToken);
         return new
         {
             category,

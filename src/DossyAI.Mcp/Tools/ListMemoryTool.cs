@@ -4,15 +4,8 @@ using ModelContextProtocol.Server;
 namespace DossyAI.Mcp.Tools;
 
 [McpServerToolType]
-public class ListMemoryTool
+public class ListMemoryTool(IMemoryService memoryService)
 {
-    private readonly IMemoryService _memoryService;
-
-    public ListMemoryTool(IMemoryService memoryService)
-    {
-        _memoryService = memoryService;
-    }
-
     /// <summary>List stored memories with optional filtering by category and creator</summary>
     [McpServerTool(Name = "list_memory")]
     public async Task<object> ListMemoryAsync(
@@ -22,7 +15,7 @@ public class ListMemoryTool
         int take = 20,
         CancellationToken cancellationToken = default)
     {
-        var (total, items) = await _memoryService.ListMemoryAsync(category, createdBy, skip, take, cancellationToken);
+        var (total, items) = await memoryService.ListMemoryAsync(category, createdBy, skip, take, cancellationToken);
         return new
         {
             total,

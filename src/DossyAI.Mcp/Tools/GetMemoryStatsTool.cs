@@ -4,20 +4,13 @@ using ModelContextProtocol.Server;
 namespace DossyAI.Mcp.Tools;
 
 [McpServerToolType]
-public class GetMemoryStatsTool
+public class GetMemoryStatsTool(IMemoryService memoryService)
 {
-    private readonly IMemoryService _memoryService;
-
-    public GetMemoryStatsTool(IMemoryService memoryService)
-    {
-        _memoryService = memoryService;
-    }
-
     /// <summary>Get statistics about stored memories including counts by category and creator</summary>
     [McpServerTool(Name = "get_memory_stats")]
     public async Task<object> GetMemoryStatsAsync(CancellationToken cancellationToken = default)
     {
-        var stats = await _memoryService.GetStatsAsync(cancellationToken);
+        var stats = await memoryService.GetStatsAsync(cancellationToken);
         return new
         {
             total_memories = stats.TotalMemories,

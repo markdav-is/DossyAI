@@ -4,15 +4,8 @@ using ModelContextProtocol.Server;
 namespace DossyAI.Mcp.Tools;
 
 [McpServerToolType]
-public class UpdateMemoryTool
+public class UpdateMemoryTool(IMemoryService memoryService)
 {
-    private readonly IMemoryService _memoryService;
-
-    public UpdateMemoryTool(IMemoryService memoryService)
-    {
-        _memoryService = memoryService;
-    }
-
     /// <summary>Update an existing memory's content, metadata, or status</summary>
     [McpServerTool(Name = "update_memory")]
     public async Task<object> UpdateMemoryAsync(
@@ -22,7 +15,7 @@ public class UpdateMemoryTool
         string? status = null,
         CancellationToken cancellationToken = default)
     {
-        var memory = await _memoryService.UpdateMemoryAsync(id, newContent, newMetadata, status, cancellationToken);
+        var memory = await memoryService.UpdateMemoryAsync(id, newContent, newMetadata, status, cancellationToken);
         return new
         {
             id = memory.Id,

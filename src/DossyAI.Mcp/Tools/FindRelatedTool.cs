@@ -4,15 +4,8 @@ using ModelContextProtocol.Server;
 namespace DossyAI.Mcp.Tools;
 
 [McpServerToolType]
-public class FindRelatedTool
+public class FindRelatedTool(IMemoryService memoryService)
 {
-    private readonly IMemoryService _memoryService;
-
-    public FindRelatedTool(IMemoryService memoryService)
-    {
-        _memoryService = memoryService;
-    }
-
     /// <summary>Find memories semantically related to the given query using cosine similarity</summary>
     [McpServerTool(Name = "find_related")]
     public async Task<object> FindRelatedAsync(
@@ -21,7 +14,7 @@ public class FindRelatedTool
         float minSimilarity = 0.7f,
         CancellationToken cancellationToken = default)
     {
-        var results = await _memoryService.FindRelatedAsync(query, limit, minSimilarity, cancellationToken);
+        var results = await memoryService.FindRelatedAsync(query, limit, minSimilarity, cancellationToken);
         return new
         {
             count = results.Count,
